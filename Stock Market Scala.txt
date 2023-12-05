@@ -1,0 +1,56 @@
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.functions._
+import org.apache.spark.ml.feature.{StandardScaler, VectorAssembler}
+import org.apache.spark.ml.Pipeline
+import org.apache.spark.sql.expressions.Window
+
+object StockDataPreparation {
+  def main(args: Array[String]): Unit = {
+    // Step 1: Create a Spark session
+    val spark = SparkSession.builder.appName("StockDataPreparation").getOrCreate()
+
+    // Step 2: Import the dataset
+    // Replace 'your_stock_data_path' with the actual path to your stock market dataset
+    val data = spark.read.option("header", "true").option("inferSchema", "true").csv("your_stock_data_path")
+
+    // Step 3: Handle missing values
+    val filledData = data.na.fill(data.agg(data.columns.map(mean(_)): _*).first())
+
+    // Step 4: Feature engineering
+    val featureData = filledData.withColumn("price_range", col("high_price") - col("low_price"))
+      .withColumn("price_change_percentage", (col("close_price") - col("open_price")) / col("open_price") * 100)
+
+    // Step 5: Lag features
+    val windowSpec = Window.orderBy("date")
+    val laggedData = featureData.withColumn("previous_close_price", lag("close_price").over(windowSpec))
+      .withColumn("previous_volume", lag("volume").over(windowSpec))
+
+    // Step 6: Normalize/Standardize numerical features
+    val numericalFeatures = Array("open_price", "high_price", "low_price", "close_price", "volume",
+      "adjusted_close", "price_range", "price_change_percentage",
+      "previous_close_price", "previous_volume")
+
+    val assembler = new VectorAssembler().setInputCols(numericalFeatures).setOutputCol("features")
+    val scaler = new StandardScaler().setInputCol("features").setOutputCol("scaled_features")
+
+    val pipeline = new Pipeline().setStages(Array(assembler, scaler))
+    val model = pipeline.fit(laggedData)
+    val normalizedData = model.transform(laggedData)
+
+    // Step 7: Split the dataset into training and testing sets
+    val cutoffDate = "2023-01-01"
+    val trainingData = normalizedData.filter(col("date") < cutoffDate)
+    val testingData = normalizedData.filter(col("date") >= cutoffDate)
+
+    // Additional steps, if needed:
+    // - Convert categorical variables to numerical (e.g., StringIndexer)
+    // - Handle time-series aspects (e.g., rolling averages, time-based features)
+
+    // Save the preprocessed datasets if necessary
+    trainingData.write.mode("overwrite").parquet("training_data.parquet")
+    testingData.write.mode("overwrite").parquet("testing_data.parquet")
+
+    // Stop the Spark session
+    spark.stop()
+  }
+}

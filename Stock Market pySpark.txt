@@ -1,0 +1,53 @@
+from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
+from pyspark.ml.feature import StandardScaler
+from pyspark.ml.feature import VectorAssembler
+from pyspark.ml import Pipeline
+from pyspark.sql.window import Window
+
+# Step 1: Create a Spark session
+spark = SparkSession.builder.appName("StockDataPreparation").getOrCreate()
+
+# Step 2: Import the dataset
+# Replace 'your_stock_data_path' with the actual path to your stock market dataset
+data = spark.read.csv('your_stock_data_path', header=True, inferSchema=True)
+
+# Step 3: Handle missing values
+data = data.na.fill(data.agg(*[F.mean(c).alias(c) for c in data.columns]).first())
+
+# Step 4: Feature engineering
+data = data.withColumn('price_range', data['high_price'] - data['low_price'])
+data = data.withColumn('price_change_percentage', (data['close_price'] - data['open_price']) / data['open_price'] * 100)
+
+# Step 5: Lag features
+window_spec = Window().orderBy("date")
+data = data.withColumn('previous_close_price', F.lag("close_price").over(window_spec))
+data = data.withColumn('previous_volume', F.lag("volume").over(window_spec))
+
+# Step 6: Normalize/Standardize numerical features
+numerical_features = ['open_price', 'high_price', 'low_price', 'close_price', 'volume',
+                      'adjusted_close', 'price_range', 'price_change_percentage',
+                      'previous_close_price', 'previous_volume']
+
+assembler = VectorAssembler(inputCols=numerical_features, outputCol="features")
+scaler = StandardScaler(inputCol="features", outputCol="scaled_features")
+
+pipeline = Pipeline(stages=[assembler, scaler])
+model = pipeline.fit(data)
+data = model.transform(data)
+
+# Step 7: Split the dataset into training and testing sets
+cutoff_date = '2023-01-01'
+training_data = data.filter(F.col('date') < cutoff_date)
+testing_data = data.filter(F.col('date') >= cutoff_date)
+
+# Additional steps, if needed:
+# - Convert categorical variables to numerical (e.g., StringIndexer)
+# - Handle time-series aspects (e.g., rolling averages, time-based features)
+
+# Save the preprocessed datasets if necessary
+training_data.write.mode("overwrite").parquet("training_data.parquet")
+testing_data.write.mode("overwrite").parquet("testing_data.parquet")
+
+# Stop the Spark session
+spark.stop()

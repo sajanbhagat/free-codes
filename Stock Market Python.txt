@@ -1,0 +1,38 @@
+import pandas as pd
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+
+# Step 1: Import the dataset
+data = pd.read_csv('your_stock_data.csv')  # Replace 'your_stock_data.csv' with the actual file path
+
+# Step 2: Handle missing values
+data.fillna(data.mean(), inplace=True)
+
+# Step 3: Feature engineering
+data['price_range'] = data['high_price'] - data['low_price']
+data['price_change_percentage'] = (data['close_price'] - data['open_price']) / data['open_price'] * 100
+
+# Step 4: Lag features
+data['previous_close_price'] = data['close_price'].shift(1)
+data['previous_volume'] = data['volume'].shift(1)
+
+# Step 5: Normalize/Standardize numerical features
+numerical_features = ['open_price', 'high_price', 'low_price', 'close_price', 'volume',
+                      'adjusted_close', 'price_range', 'price_change_percentage',
+                      'previous_close_price', 'previous_volume']
+
+scaler = StandardScaler()
+data[numerical_features] = scaler.fit_transform(data[numerical_features])
+
+# Step 6: Split the dataset into training and testing sets
+cutoff_date = '2023-01-01'
+training_data = data[data['date'] < cutoff_date].copy()
+testing_data = data[data['date'] >= cutoff_date].copy()
+
+# Additional steps, if needed:
+# - Convert categorical variables to numerical (e.g., one-hot encoding)
+# - Handle time-series aspects (e.g., rolling averages, time-based features)
+
+# Save the preprocessed datasets if necessary
+training_data.to_csv('training_data.csv', index=False)
+testing_data.to_csv('testing_data.csv', index=False)

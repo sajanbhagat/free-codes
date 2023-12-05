@@ -1,0 +1,113 @@
+-- Step 1: Select relevant features and target variable
+CREATE TABLE selected_data AS
+SELECT
+  "date",
+  "open_price",
+  "high_price",
+  "low_price",
+  "close_price",
+  "volume",
+  "adjusted_close"
+FROM
+  stock_data;
+
+-- Step 2: Handle missing values
+CREATE TABLE cleaned_data AS
+SELECT
+  "date",
+  COALESCE("open_price", AVG("open_price")) AS "open_price",
+  COALESCE("high_price", AVG("high_price")) AS "high_price",
+  COALESCE("low_price", AVG("low_price")) AS "low_price",
+  COALESCE("close_price", AVG("close_price")) AS "close_price",
+  COALESCE("volume", AVG("volume")) AS "volume",
+  COALESCE("adjusted_close", AVG("adjusted_close")) AS "adjusted_close"
+FROM
+  selected_data;
+
+-- Step 3: Feature engineering - Create additional features if needed
+CREATE TABLE engineered_data AS
+SELECT
+  "date",
+  "open_price",
+  "high_price",
+  "low_price",
+  "close_price",
+  "volume",
+  "adjusted_close",
+  ("high_price" - "low_price") AS "price_range",
+  ("close_price" - "open_price") AS "price_change_percentage",
+  -- Add more feature engineering steps as needed
+FROM
+  cleaned_data;
+
+-- Step 4: Lag features - Include historical prices as features
+CREATE TABLE lagged_data AS
+SELECT
+  "date",
+  "open_price",
+  "high_price",
+  "low_price",
+  "close_price",
+  "volume",
+  "adjusted_close",
+  "price_range",
+  "price_change_percentage",
+  LAG("close_price", 1) OVER (ORDER BY "date") AS "previous_close_price",
+  LAG("volume", 1) OVER (ORDER BY "date") AS "previous_volume",
+  -- Include more lagged features if needed
+FROM
+  engineered_data;
+
+-- Step 5: Normalize/Standardize numerical features
+CREATE TABLE normalized_data AS
+SELECT
+  "date",
+  ("open_price" - AVG("open_price")) / STDDEV("open_price") AS "open_price_normalized",
+  ("high_price" - AVG("high_price")) / STDDEV("high_price") AS "high_price_normalized",
+  ("low_price" - AVG("low_price")) / STDDEV("low_price") AS "low_price_normalized",
+  ("close_price" - AVG("close_price")) / STDDEV("close_price") AS "close_price_normalized",
+  ("volume" - AVG("volume")) / STDDEV("volume") AS "volume_normalized",
+  ("adjusted_close" - AVG("adjusted_close")) / STDDEV("adjusted_close") AS "adjusted_close_normalized",
+  "price_range",
+  "price_change_percentage",
+  "previous_close_price",
+  "previous_volume"
+FROM
+  lagged_data;
+
+-- Step 6: Split the dataset into training and testing sets
+CREATE TABLE training_data AS
+SELECT
+  "date",
+  "open_price_normalized",
+  "high_price_normalized",
+  "low_price_normalized",
+  "close_price_normalized",
+  "volume_normalized",
+  "adjusted_close_normalized",
+  "price_range",
+  "price_change_percentage",
+  "previous_close_price",
+  "previous_volume"
+FROM
+  normalized_data
+WHERE
+  "date" < '2023-01-01'; -- Assuming a cutoff date for training
+
+CREATE TABLE testing_data AS
+SELECT
+  "date",
+  "open_price_normalized",
+  "high_price_normalized",
+  "low_price_normalized",
+  "close_price_normalized",
+  "volume_normalized",
+  "adjusted_close_normalized",
+  "price_range",
+  "price_change_percentage",
+  "previous_close_price",
+  "previous_volume"
+FROM
+  normalized_data
+WHERE
+  "date" >= '2023-01-01'; -- Testing data after the cutoff date
